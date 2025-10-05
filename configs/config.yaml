@@ -1,0 +1,56 @@
+# Emotify Configuration File
+# ===========================
+
+# Model Configuration
+models:
+  text_emotion:
+    model_type: "vader"  # Options: vader, bert, textblob
+    confidence_threshold: 0.6
+
+  audio_emotion:
+    sample_rate: 22050
+    n_mfcc: 13
+    n_fft: 2048
+    hop_length: 512
+
+  recommendation:
+    algorithm: "content_based"  # Options: content_based, collaborative, hybrid
+    num_recommendations: 10
+    similarity_metric: "cosine"
+
+# Emotion Categories
+emotions:
+  basic_classes:
+    - "happy"
+    - "sad" 
+    - "calm"
+    - "energetic"
+
+  valence_arousal:
+    enabled: false
+    valence_range: [-1, 1]
+    arousal_range: [0, 1]
+
+# Data Paths
+data:
+  raw_data_path: "data/raw/"
+  processed_data_path: "data/processed/"
+  models_path: "models/trained/"
+  sample_songs_path: "data/datasets/sample_songs.csv"
+
+# API Keys (Set these in .env file)
+api_keys:
+  spotify_client_id: "YOUR_SPOTIFY_CLIENT_ID"
+  spotify_client_secret: "YOUR_SPOTIFY_CLIENT_SECRET"
+  lastfm_api_key: "YOUR_LASTFM_API_KEY"
+
+# Web Interface
+web_interface:
+  title: "Emotify - AI Music Recommendation"
+  theme: "light"
+  sidebar_enabled: true
+
+# Logging
+logging:
+  level: "INFO"
+  file: "logs/emotify.log"
