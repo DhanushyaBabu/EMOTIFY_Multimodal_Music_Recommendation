@@ -32,8 +32,7 @@ st.set_page_config(
 )
 
 # Load external CSS
-with open(os.path.join(os.path.dirname(__file__), 'style.css'), 'r') as f:
-    st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+
 
 def initialize_session_state():
     """Initialize session state variables."""
