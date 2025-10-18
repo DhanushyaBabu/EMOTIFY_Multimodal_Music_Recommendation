@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import sys
 import os
+from datetime import datetime
 
 # Add src directory to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -19,6 +20,7 @@ try:
     from src.emotion_detection.text_emotion import TextEmotionDetector
     from src.emotion_detection.audio_emotion import AudioEmotionDetector
     from src.recommendation_engine.recommender import EmotionBasedRecommender
+    from src.utils.conversational_bot import ConversationalBot
 except ImportError as e:
     st.error(f"Import error: {e}")
     st.error("Please ensure all required modules are installed and accessible.")
@@ -128,11 +130,122 @@ def initialize_session_state():
         dataset_path = os.path.join(base_path, '..', '..', 'data', 'datasets', 'spotify_data.csv')
         st.session_state.recommender = EmotionBasedRecommender(songs_data_path=dataset_path)
 
+    if 'bot' not in st.session_state:
+        st.session_state.bot = ConversationalBot(
+            emotion_detector=st.session_state.text_detector,
+            recommender=st.session_state.recommender
+        )
+
+    # NEW CHAT HISTORY
+    if 'messages' not in st.session_state:
+        # Start with the bot's greeting
+        st.session_state.messages = [{"role": "assistant", "content": st.session_state.bot.initial_prompt}]
+
+    # ... rest of initializations ...
+    if 'current_emotion' not in st.session_state:
+        st.session_state.current_emotion = None
+
     if 'user_history' not in st.session_state:
         st.session_state.user_history = []
 
     if 'current_emotion' not in st.session_state:
         st.session_state.current_emotion = None
+
+def get_bot_response(user_message):
+    """Generate more dynamic and contextual bot responses."""
+    import random
+    
+    # Add emotion detection
+    emotion_result = st.session_state.text_detector.predict(user_message)
+    
+    # Update current emotion if confidence is high enough
+    if emotion_result['confidence'] > 0.6:
+        st.session_state.current_emotion = emotion_result
+
+    # Dynamic greetings
+    greetings = [
+        "Hello! How's your musical journey going today?",
+        "Hi there! Ready to discover some great music?",
+        "Hey! Let's find the perfect soundtrack for your mood!",
+        "Welcome! I'm here to help you find music that resonates with you!"
+    ]
+
+    # Dynamic recommendation responses
+    recommendation_responses = [
+        f"Based on your {emotion_result['emotion']} mood, I think you'll love these tracks! Want me to show you?",
+        f"I've got some amazing {emotion_result['emotion']}-inspired songs that might speak to you right now.",
+        f"Let me find you some music that matches your {emotion_result['emotion']} energy!",
+        "I know just the right songs for this mood. Should I share my recommendations?"
+    ]
+
+    # Dynamic emotion responses
+    emotion_responses = [
+        f"I sense you're feeling {emotion_result['emotion']}. Music can be a great companion for this mood.",
+        f"Your words suggest a {emotion_result['emotion']} state of mind. Let's find music that resonates with that.",
+        f"I'm picking up on {emotion_result['emotion']} vibes. Would you like some matching music suggestions?",
+        f"It sounds like you're {emotion_result['emotion']}. I can help you find the perfect soundtrack for this feeling."
+    ]
+
+    # Dynamic help responses
+    help_responses = [
+        "I use AI to understand your emotions and find music that matches your mood. Want to give it a try?",
+        "I can analyze your emotions and suggest music that either matches or helps enhance your mood. What interests you?",
+        "Think of me as your personal DJ who understands how you feel. Would you like some music suggestions?",
+        "I'm here to connect your emotions with the perfect music. How can I help you today?"
+    ]
+
+    # Default varied responses
+    default_responses = [
+        f"I noticed a {emotion_result['emotion']} tone. Let me know if you'd like some music suggestions!",
+        "Tell me more about what kind of music you're in the mood for.",
+        "I'm here to help you find the perfect music. What kind of songs are you looking for?",
+        "Would you like me to suggest some songs based on your current mood?"
+    ]
+
+    # Store conversation history in session state if not exists
+    if 'conversation_history' not in st.session_state:
+        st.session_state.conversation_history = []
+
+    # Add current message to history
+    st.session_state.conversation_history.append(user_message.lower())
+
+    # Check for repetitive user messages
+    if len(st.session_state.conversation_history) >= 2:
+        if st.session_state.conversation_history[-1] == st.session_state.conversation_history[-2]:
+            return "I notice you're repeating yourself. Let me help you differently - would you like to try our emotion detection feature or get some fresh music recommendations?"
+
+    # Generate contextual response
+    if any(greeting in user_message.lower() for greeting in ['hello', 'hi', 'hey', 'greetings']):
+        response = random.choice(greetings)
+    elif any(word in user_message.lower() for word in ['recommend', 'suggestion', 'music', 'song']):
+        response = random.choice(recommendation_responses)
+    elif any(word in user_message.lower() for word in ['emotion', 'feeling', 'mood', 'feel']):
+        response = random.choice(emotion_responses)
+    elif any(word in user_message.lower() for word in ['how', 'what', 'help', 'work']):
+        response = random.choice(help_responses)
+    else:
+        response = random.choice(default_responses)
+
+    # Add interactive follow-up based on context
+    if 'recommendations' in st.session_state and len(st.session_state.recommendations) > 0:
+        response += "\n\nBy the way, what did you think of the previous recommendations?"
+    
+    # Add call-to-action if no emotion detected yet
+    if 'current_emotion' not in st.session_state or not st.session_state.current_emotion:
+        response += "\n\nFeel free to share how you're feeling, and I'll find the perfect music for your mood!"
+
+    return response
+
+def add_chat_message(role, content):
+    """Add a message to the chat history."""
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    
+    st.session_state.chat_history.append({
+        "role": role,
+        "content": content,
+        "timestamp": datetime.now().strftime("%H:%M")
+    })
 
 def display_emotion_visualization(emotion_data):
     """Display emotion detection results with visualization."""
@@ -256,6 +369,73 @@ def create_emotion_distribution_chart(recommender):
     except Exception as e:
         st.error(f"Error creating emotion distribution chart: {e}")
 
+def render_chat_interface():
+    """Render the chat interface in the bottom right corner."""
+    # Chat toggle button
+    chat_button_html = f"""
+    <div style="position: fixed; bottom: 20px; right: 20px; z-index: 1000;">
+        <button
+            onclick="window.chat_visible = !window.chat_visible; document.getElementById('chat-container').style.display = window.chat_visible ? 'block' : 'none';"
+            style="background-color: #1e1e1e; color: white; border: none; border-radius: 50%; width: 45px; height: 45px; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center;">
+            <span style="font-size: 20px;">💬</span>
+        </button>
+    </div>
+    """
+    st.markdown(chat_button_html, unsafe_allow_html=True)
+
+    # Chat container
+    chat_container_html = """
+    <div id="chat-container" style="display: none; position: fixed; bottom: 75px; right: 20px; width: 280px; height: 350px; background: #1e1e1e; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); z-index: 1000; overflow: hidden; display: flex; flex-direction: column;">
+        <div style="padding: 8px; background: #252526; color: white; font-size: 14px; font-weight: 500;">
+            Emotify Assistant
+        </div>
+        <div id="chat-messages" style="flex: 1; overflow-y: auto; padding: 10px; background: #1e1e1e;">
+            {messages}
+        </div>
+        <div style="padding: 8px; border-top: 1px solid #333;">
+            <input type="text" id="chat-input" placeholder="Ask me anything..."
+                style="width: 100%; padding: 6px 12px; border: 1px solid #333; border-radius: 15px; outline: none; background: #252526; color: white; font-size: 13px;"
+                onkeypress="if(event.key === 'Enter') {{ sendMessage(); }}">
+        </div>
+    </div>
+    """
+
+    # Display chat messages
+    messages_html = ""
+    for msg in st.session_state.chat_history:
+        if msg["role"] == "user":
+            messages_html += f"""
+            <div style="margin-bottom: 8px;">
+                <div style="background: #333; padding: 6px 10px; border-radius: 12px; max-width: 80%; float: right; font-size: 13px; color: white;">
+                    {msg["content"]}
+                </div>
+                <div style="clear: both;"></div>
+            </div>
+            """
+        else:
+            messages_html += f"""
+            <div style="margin-bottom: 8px;">
+                <div style="background: #2d2d2d; color: white; padding: 6px 10px; border-radius: 12px; max-width: 80%; font-size: 13px;">
+                    {msg["content"]}
+                </div>
+            </div>
+            """
+
+    st.markdown(chat_container_html.format(messages=messages_html), unsafe_allow_html=True)
+
+    # Add chat functionality
+    with st.container():
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            user_message = st.text_input("Message Emotify:", key="chat_input", label_visibility="collapsed")
+        with col2:
+            if st.button("Send", key="send_button"):
+                if user_message:
+                    add_chat_message("user", user_message)
+                    bot_response = get_bot_response(user_message)
+                    add_chat_message("assistant", bot_response)
+                    st.session_state.chat_input = ""
+
 def main():
     initialize_session_state()
     
@@ -362,7 +542,7 @@ def main():
             st.markdown('</div>', unsafe_allow_html=True)
 
     # Main content area
-    tab1, tab2, tab3 = st.tabs(["😊 Emotion Detection", "🎵 Recommendations", "📊 Analytics"])
+    tab1, tab2, tab3, tab4 = st.tabs(["😊 Emotion Detection", "🎵 Recommendations", "📊 Analytics", "💬 ChatBot"])
     
     with tab1:
         st.markdown('<div class="content-section">', unsafe_allow_html=True)
@@ -584,7 +764,43 @@ def main():
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Audio feature data (valence, arousal, tempo, energy) not available in the dataset for detailed analysis.")
+    with tab4:
+        st.header("💬 Talk to Emotify AI")
+        st.markdown(
+            "Use the chat bot to ask for music or describe your mood. "
+            "The bot can auto-detect your emotion from your text!"
+        )
 
+        # Display chat messages
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        # Chat input logic
+        if prompt := st.chat_input("Start a conversation about music..."):
+            # Add user message to chat history
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            # Get bot response and potential new emotion
+            with st.spinner("Emotify is thinking..."):
+                
+                # *** KEY CHANGE: CALL THE DYNAMIC get_bot_response FUNCTION ***
+                response = get_bot_response(prompt)
+                
+                # The get_bot_response function already updates st.session_state.current_emotion 
+                # and generates a dynamic response based on emotion detection and keywords.
+
+                # Add bot response to chat history
+                st.session_state.messages.append({"role": "assistant", "content": response})
+
+            # Display bot response
+            with st.chat_message("assistant"):
+                st.markdown(response)
+
+            # Force a rerun to display the latest messages instantly
+            st.rerun()
     # Footer
     st.markdown("---")
     st.markdown(
