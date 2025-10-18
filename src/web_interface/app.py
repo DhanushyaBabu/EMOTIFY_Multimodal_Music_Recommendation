@@ -32,7 +32,87 @@ st.set_page_config(
 )
 
 # Load external CSS
-
+st.markdown("""
+<style>
+    /* Full screen layout */
+    .main .block-container {
+        max-width: 100% !important;
+        width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    
+    /* Content layout */
+    .content-section {
+        margin: 0 !important;
+        padding: 2rem !important;
+        border-radius: 0 !important;
+    }
+    
+    /* Sidebar layout */
+    [data-testid="stSidebar"] {
+        padding-top: 0;
+    }
+    
+    [data-testid="stSidebarContent"] {
+        padding: 1rem;
+    }
+    
+    /* Remove extra spacing */
+    .element-container {
+        margin-bottom: 1rem;
+    }
+    
+    .row-widget.stButton {
+        margin-bottom: 1rem;
+    }
+    
+    /* Full width containers */
+    [data-testid="stHorizontalBlock"] {
+        width: 100%;
+        gap: 1rem;
+    }
+    
+    [data-testid="column"] {
+        padding: 0.5rem !important;
+    }
+    
+    /* Chart layout */
+    .plotly-graph-div, .stPlotlyChart {
+        width: 100% !important;
+    }
+    
+    [data-testid="stPlotlyChart"] > div {
+        width: 100% !important;
+    }
+    
+    /* Hide footer */
+    footer {
+        display: none;
+    }
+    
+    /* Responsive layout */
+    @media (max-width: 1200px) {
+        .main .block-container {
+            padding: 0 0.5rem !important;
+        }
+        
+        [data-testid="stHorizontalBlock"] {
+            flex-direction: column;
+        }
+        
+        [data-testid="stHorizontalBlock"] > div {
+            width: 100%;
+        }
+    }
+    
+    @media (max-width: 768px) {
+        .content-section {
+            padding: 1rem !important;
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
 
 def initialize_session_state():
     """Initialize session state variables."""
@@ -75,10 +155,15 @@ def display_emotion_visualization(emotion_data):
             )),
         showlegend=False,
         title="Emotion Detection Result",
-        height=300
+        height=300,
+        margin=dict(l=20, r=20, t=40, b=20),
+        autosize=True
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config={
+        'displayModeBar': False,
+        'responsive': True
+    })
 
 def display_song_recommendations(recommendations):
     """Display song recommendations in a nice format."""
@@ -143,13 +228,78 @@ def create_emotion_distribution_chart(recommender):
         )
 
         fig.update_traces(textposition='inside', textinfo='percent+label')
-        st.plotly_chart(fig, use_container_width=True)
+        fig.update_layout(
+            autosize=True,
+            margin=dict(l=20, r=20, t=40, b=20),
+            height=350
+        )
+        
+        st.plotly_chart(fig, use_container_width=True, config={
+            'displayModeBar': False,
+            'responsive': True
+        })
 
     except Exception as e:
         st.error(f"Error creating emotion distribution chart: {e}")
 
 def main():
     initialize_session_state()
+    
+    # Configure the layout to be more responsive
+    st.markdown("""
+        <style>
+            /* Responsive layout adjustments */
+            @media (max-width: 1200px) {
+                .main .block-container {
+                    padding-left: 0.5rem;
+                    padding-right: 0.5rem;
+                }
+                
+                [data-testid="stHorizontalBlock"] {
+                    flex-direction: column;
+                }
+                
+                [data-testid="stHorizontalBlock"] > div {
+                    width: 100%;
+                }
+            }
+            
+            /* Improved chart spacing */
+            .element-container {
+                margin-bottom: 1rem;
+            }
+            
+            /* Better container spacing */
+            .row-widget.stButton {
+                margin-bottom: 1rem;
+            }
+            
+            /* Fix chart overflow */
+            [data-testid="stPlotlyChart"] > div {
+                width: 100% !important;
+            }
+            
+            /* Ensure tabs take full width */
+            .stTabs [data-baseweb="tab-list"] button {
+                flex-grow: 1;
+            }
+            
+            /* Improve readability on smaller screens */
+            @media (max-width: 768px) {
+                h1 {
+                    font-size: 2rem !important;
+                }
+                
+                .content-section {
+                    padding: 1rem;
+                }
+                
+                [data-testid="stMetricValue"] {
+                    font-size: 1.5rem !important;
+                }
+            }
+        </style>
+    """, unsafe_allow_html=True)
     
     # Main content container with gradient background
     st.markdown("""
