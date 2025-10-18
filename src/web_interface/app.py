@@ -184,10 +184,24 @@ def display_song_recommendations(recommendations):
                 st.markdown(f"**{song.get('title', 'Unknown Title')}**")
                 st.markdown(f"*by {song.get('artist', 'Unknown Artist')}*")
                 
-                # Create Spotify search URL
-                from urllib.parse import quote
-                search_query = quote(f"{song.get('title', '')} {song.get('artist', '')}")
-                spotify_url = f"https://open.spotify.com/search/{search_query}/tracks"
+                # Get track ID from the song data - check both potential column names
+                track_id = song.get('song_id', '') or song.get('track_id', '')
+                print(f"Track ID for {song.get('title')}: {track_id}")
+                
+                # Clean up the track ID if it's in a Spotify URI format
+                if track_id and ':' in str(track_id):
+                    track_id = str(track_id).split(':')[-1]
+                
+                if track_id and str(track_id).strip():
+                    # Direct Spotify track URL
+                    spotify_url = f"https://open.spotify.com/track/{track_id}"
+                    print(f"Using direct Spotify track URL: {spotify_url}")
+                else:
+                    # Fallback to search if no track ID is available
+                    from urllib.parse import quote
+                    search_query = quote(f"{song.get('title', '')} {song.get('artist', '')}")
+                    spotify_url = f"https://open.spotify.com/search/{search_query}"
+                    print(f"Using search fallback URL: {spotify_url}")
                 
                 # Create a custom button with CSS styling
                 spotify_button = f"""
@@ -211,8 +225,8 @@ def display_song_recommendations(recommendations):
                 """
                 st.markdown(spotify_button, unsafe_allow_html=True)
 
-                if st.button(f"👍 Like", key=f"like_{song.get('song_id', i)}"):
-                    st.session_state.user_history.append(song.get('song_id', i))
+                if st.button(f"👍 Like", key=f"like_{track_id or i}"):
+                    st.session_state.user_history.append(track_id or i)
                     st.success("Added to your preferences!")
 
 def create_emotion_distribution_chart(recommender):
