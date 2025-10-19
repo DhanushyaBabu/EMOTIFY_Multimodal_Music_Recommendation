@@ -12,6 +12,7 @@ from plotly.subplots import make_subplots
 import sys
 import os
 from datetime import datetime
+import tempfile
 
 # Add src directory to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -600,12 +601,13 @@ def main():
 
                     if st.button("Analyze Audio Emotion", type="primary"):
                         with st.spinner("Analyzing audio emotion..."):
-                            # Save uploaded file temporarily
-                            temp_path = f"temp_audio_{uploaded_audio.name}"
-                            with open(temp_path, "wb") as f:
-                                f.write(uploaded_audio.getbuffer())
+                            # Save uploaded file to a temporary directory
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{uploaded_audio.name}") as tmp:
+                                tmp.write(uploaded_audio.getbuffer())
+                                temp_path = tmp.name
 
                             try:
+                                # Analyze the audio file from the secure temporary path
                                 emotion_result = st.session_state.audio_detector.analyze_audio(temp_path)
                                 st.session_state.current_emotion = emotion_result
 

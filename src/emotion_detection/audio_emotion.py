@@ -37,7 +37,7 @@ class AudioEmotionDetector:
             'n_fft': 2048,
             'hop_length': 512,
             'n_chroma': 12,
-            'n_contrast': 7
+            'n_contrast': 6  # Reduced from 7 to 6
         }
 
         # Initialize with a basic model (can be replaced with trained model)
@@ -60,8 +60,8 @@ class AudioEmotionDetector:
             Feature vector as numpy array
         """
         try:
-            # Load audio file
-            y, sr = librosa.load(audio_path, sr=self.sample_rate)
+            # Load audio file at its native sample rate to avoid resampling errors
+            y, sr = librosa.load(audio_path, sr=None)
 
             # Extract various audio features
             features = []
@@ -85,6 +85,11 @@ class AudioEmotionDetector:
 
             # 4. Tempo and rhythm features
             tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
+            
+            # Ensure tempo is a single value, not an array
+            if isinstance(tempo, np.ndarray):
+                tempo = np.mean(tempo) if tempo.size > 0 else 0.0
+
             features.append(tempo)
 
             # 5. Spectral features
@@ -92,11 +97,14 @@ class AudioEmotionDetector:
             spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)
             spectral_bandwidth = librosa.feature.spectral_bandwidth(y=y, sr=sr)
             zero_crossing_rate = librosa.feature.zero_crossing_rate(y)
+            spectral_flatness = librosa.feature.spectral_flatness(y=y)
 
             features.append(np.mean(spectral_centroid))
             features.append(np.mean(spectral_rolloff))
             features.append(np.mean(spectral_bandwidth))
             features.append(np.mean(zero_crossing_rate))
+            features.append(np.std(zero_crossing_rate))  # New feature for laughter detection
+            features.append(np.mean(spectral_flatness))
 
             # 6. Energy and dynamics
             rms_energy = librosa.feature.rms(y=y)
@@ -154,49 +162,101 @@ class AudioEmotionDetector:
 
     def _rule_based_classify(self, features: np.ndarray) -> Dict:
         """
-        Simple rule-based classification for demo purposes.
-        In production, this would use a trained ML model.
+        Advanced rule-based classification using multiple audio features.
         """
-        # Extract key features for rule-based classification
-        if len(features) < 20:
-            return {"emotion": "calm", "confidence": 0.5, "valence": 0.0, "arousal": 0.5}
+        # Add a check for a zero vector, which indicates feature extraction failed
+        if np.all(features == 0):
+            return {
+                "emotion": "unknown",
+                "confidence": 0.1,
+                "valence": 0.5,
+                "arousal": 0.5,
+                "tempo": 0,
+                "energy": 0,
+                "brightness": 0,
+                "error": "Feature extraction failed"
+            }
+            
+        # Check for valid feature vector
+        if len(features) < 50:
+            return {"emotion": "calm", "confidence": 0.5, "valence": 0.5, "arousal": 0.5}
 
-        # Approximate indices based on feature extraction order
-        tempo_idx = 32  # Approximate position of tempo in feature vector
-        energy_idx = -2  # RMS energy mean
-        spectral_centroid_idx = -6  # Spectral centroid
+        # Feature indices (approximate based on extraction order)
+        tempo_idx = 40
+        energy_idx = -2
+        energy_std_idx = -1
+        brightness_idx = -8
+        zcr_idx = -6
+        zcr_std_idx = -5
+        flatness_idx = -4
 
-        # Safe indexing
-        tempo = features[min(tempo_idx, len(features)-1)]
-        energy = features[min(energy_idx, len(features)-1)]
-        brightness = features[min(spectral_centroid_idx, len(features)-1)]
+        # Extract features
+        tempo = features[tempo_idx]
+        energy = features[energy_idx]
+        energy_std = features[energy_std_idx]
+        brightness = features[brightness_idx]
+        zcr = features[zcr_idx]
+        zcr_std = features[zcr_std_idx]
+        flatness = features[flatness_idx]
 
-        # Normalize features (rough approximation)
-        tempo_norm = min(tempo / 180.0, 1.0)  # Normalize tempo
-        energy_norm = min(energy * 100, 1.0)  # Normalize energy
-        brightness_norm = min(brightness / 5000.0, 1.0)  # Normalize spectral centroid
+        # Normalize features
+        tempo_norm = min(tempo / 200.0, 1.0)
+        energy_norm = min(energy * 150, 1.0)
+        brightness_norm = min(brightness / 8000.0, 1.0)
+        energy_variation_norm = min(energy_std * 10, 1.0)
 
-        # Rule-based classification
-        if tempo_norm > 0.7 and energy_norm > 0.6:
-            emotion = "energetic"
-            valence = 0.7
-            arousal = 0.8
-            confidence = 0.8
-        elif energy_norm < 0.3 and brightness_norm < 0.4:
-            emotion = "sad"
-            valence = 0.2
-            arousal = 0.3
-            confidence = 0.7
-        elif tempo_norm < 0.4 and energy_norm < 0.5:
-            emotion = "calm"
-            valence = 0.5
-            arousal = 0.2
-            confidence = 0.6
+        # Speechiness metric: high ZCR and high flatness suggest non-tonal, speech-like audio
+        speechiness = (zcr * 0.6 + flatness * 0.4)
+        
+        # Laughter metric: high energy variation and high zcr variation
+        laughter_score = (energy_variation_norm * 0.6 + zcr_std * 0.4)
+
+        if laughter_score > 0.3:  # Strong indicator of a non-musical vocalization (laughing or crying)
+            # Differentiate between laughing (less bright) and crying (brighter) based on user's samples
+            if brightness_norm > 0.35: # Crying is "brighter" in user's sample
+                emotion = "sad"
+                valence = 0.3 - (energy_variation_norm * 0.2)
+                arousal = 0.5 + (energy_norm * 0.3)
+                confidence = min(1 - ((valence + arousal) / 2), 0.99)
+            else: # Laughter has less high-frequency energy in user's sample
+                emotion = "happy"
+                valence = 0.5 + (brightness_norm * 0.3) + (laughter_score * 0.2)
+                arousal = 0.6 + (energy_norm * 0.4)
+                confidence = min((valence + arousal) / 2, 0.99)
+
+        elif speechiness > 0.1:  # Threshold for other speech-like audio
+            # Logic for speech
+            valence = brightness_norm * 0.7 + energy_norm * 0.3
+            arousal = energy_norm * 0.8 + brightness_norm * 0.2
+
+            if arousal > 0.6 and valence > 0.5:
+                emotion = "happy"
+                confidence = (arousal + valence) / 2
+            elif arousal > 0.6:
+                emotion = "energetic"  # Could be angry speech
+                confidence = arousal
+            else:
+                emotion = "calm"  # Neutral speech
+                confidence = 1 - arousal
         else:
-            emotion = "happy"
-            valence = 0.8
-            arousal = 0.6
-            confidence = 0.65
+            # Original logic for music
+            valence = (brightness_norm * 0.5 + tempo_norm * 0.5)
+            arousal = (energy_norm * 0.6 + tempo_norm * 0.4)
+
+            if arousal > 0.6 and valence > 0.6:
+                emotion = "happy"
+                confidence = (arousal + valence) / 2
+            elif arousal > 0.6 and valence <= 0.4:
+                emotion = "energetic"
+                confidence = arousal
+            elif arousal < 0.4 and valence < 0.4:
+                emotion = "sad"
+                confidence = 1 - (arousal + valence) / 2
+            else:
+                emotion = "calm"
+                confidence = 1 - arousal
+
+        confidence = min(max(confidence, 0.1), 0.99)
 
         return {
             "emotion": emotion,
@@ -245,6 +305,29 @@ class AudioEmotionDetector:
     def analyze_batch(self, audio_paths: List[str]) -> List[Dict]:
         """Analyze emotions for multiple audio files."""
         return [self.analyze_audio(path) for path in audio_paths]
+
+    def analyze_directory(self, audio_dir: str) -> List[Dict]:
+        """
+        Analyze all audio files in a directory.
+        
+        Args:
+            audio_dir: Path to directory containing audio files
+            
+        Returns:
+            List of analysis results for each audio file
+        """
+        results = []
+        try:
+            for file in os.listdir(audio_dir):
+                if file.lower().endswith(('.mp3', '.wav', '.ogg')):
+                    file_path = os.path.join(audio_dir, file)
+                    result = self.analyze_audio(file_path)
+                    result['file_name'] = file
+                    results.append(result)
+            return results
+        except Exception as e:
+            print(f"Error analyzing directory {audio_dir}: {str(e)}")
+            return []
 
     def train_model(self, feature_vectors: List[np.ndarray], labels: List[str]):
         """
